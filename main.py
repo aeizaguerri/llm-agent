@@ -1,7 +1,6 @@
-from dotenv import load_dotenv
-from src.chat import ChatClient
+from src.llm import ChatClient
+from src.core import Config
 
-load_dotenv()
 
 def main():
     chat_client = ChatClient()
@@ -13,7 +12,7 @@ def main():
                 print("Saliendo del chatbot. ¡Hasta luego!")
                 break
             messages = [{"role": "user", "content": user_input}]
-            response = chat_client.get_response(model="openai/gpt-oss-120b:fastest", messages=messages)
+            response = chat_client.get_response(model=Config.DEFAULT_MODEL, messages=messages)
             print(f"Chatbot: {response.content}")
         except Exception as e:
             print(f"Ocurrió un error: {e}")                

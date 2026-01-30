@@ -51,29 +51,3 @@ class ClientFactory:
         base_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434/v1")
 
         return OpenAI(base_url=base_url, api_key="ollama")
-
-
-class ChatClient:
-    _instance = None
-
-    def __new__(cls, client=None):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self, client=None):
-        if self._initialized:
-            return
-
-        self.client = client or ClientFactory.create("huggingface")
-        self._initialized = True
-
-    def get_response(self, model, messages, temperature=0.7, max_tokens=150):
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        return response.choices[0].message

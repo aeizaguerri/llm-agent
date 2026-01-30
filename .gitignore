@@ -16,3 +16,6 @@ wheels/
 
 # Tareas
 entregas/
+
+# Claude
+.claude/
