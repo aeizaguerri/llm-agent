@@ -10,3 +10,9 @@ wheels/
 .venv
 .env
 .claude
+
+# IDE and editor files
+.vscode/
+
+# Tareas
+entregas/
