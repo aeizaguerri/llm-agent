@@ -21,5 +21,5 @@ class Config:
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
 
     # Modelo por defecto
-    DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "openai/gpt-oss-120b:fastest")
+    DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "moonshotai/Kimi-K2-Instruct")
     DEFAULT_PROVIDER: str = os.getenv("DEFAULT_PROVIDER", "huggingface")
