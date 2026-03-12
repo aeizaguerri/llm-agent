@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.knowledge.models import ImpactWarning
+
 
 class BugReport(BaseModel):
     file: str = Field(..., description="Path to the file containing the bug")
@@ -17,3 +19,7 @@ class ReviewOutput(BaseModel):
     summary: str = Field(..., description="Overall summary of the PR review")
     bugs: list[BugReport] = Field(default_factory=list, description="List of bugs found in the PR")
     approved: bool = Field(..., description="True if the PR can be merged, False if it requires changes")
+    impact_warnings: list[ImpactWarning] = Field(
+        default_factory=list,
+        description="Cross-repo impact warnings from knowledge graph (not produced by LLM)",
+    )
