@@ -5,19 +5,22 @@ import httpx
 from github import Github
 
 
-def fetch_pr_data(owner: str, repo: str, pr_number: int) -> tuple[str, str, str]:
+def fetch_pr_data(
+    owner: str, repo: str, pr_number: int, github_token: str = ""
+) -> tuple[str, str, str]:
     """Fetches PR diff, head SHA, and title from GitHub using PyGithub.
 
     Args:
         owner: Repository owner (user or org).
         repo: Repository name.
         pr_number: Pull request number.
+        github_token: Optional GitHub token. When omitted, falls back to GITHUB_ACCESS_TOKEN env var.
 
     Returns:
         Tuple of (diff_text, head_sha, pr_title).
         diff_text is a concatenation of filename + patch for each changed file.
     """
-    token = os.getenv("GITHUB_ACCESS_TOKEN", "")
+    token = github_token or os.getenv("GITHUB_ACCESS_TOKEN", "")
     g = Github(token) if token else Github()
     repository = g.get_repo(f"{owner}/{repo}")
     pr = repository.get_pull(pr_number)
@@ -41,6 +44,7 @@ def post_review_comments(
     commit_sha: str,
     comments: str,
     summary: str = "",
+    github_token: str = "",
 ) -> str:
     """Posts a review with inline comments on a GitHub pull request.
 
@@ -52,16 +56,19 @@ def post_review_comments(
         comments: JSON string with a list of comment objects, each having:
                   {"path": str, "line": int, "body": str}
         summary: Optional overall review summary body text.
+        github_token: Optional GitHub token. When omitted, falls back to GITHUB_ACCESS_TOKEN env var.
 
     Returns:
         Success message or error description.
     """
-    token = os.getenv("GITHUB_ACCESS_TOKEN", "")
+    token = github_token or os.getenv("GITHUB_ACCESS_TOKEN", "")
     if not token:
         return "Error: GITHUB_ACCESS_TOKEN is not set."
 
     try:
-        parsed_comments = json.loads(comments) if isinstance(comments, str) else comments
+        parsed_comments = (
+            json.loads(comments) if isinstance(comments, str) else comments
+        )
     except json.JSONDecodeError as e:
         return f"Error parsing comments JSON: {e}"
 
