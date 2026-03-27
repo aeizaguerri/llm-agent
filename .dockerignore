@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+dist
+build
+.venv
+.env
+
+# Tests and docs
+tests/
+docs/
+
+# Dev tools
+.ruff_cache
+.pytest_cache
+.mypy_cache
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Render/CI artifacts
+.render
