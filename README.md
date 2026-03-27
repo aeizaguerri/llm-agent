@@ -4,107 +4,108 @@ Revisor automatizado de pull requests usando [Agno](https://docs.agno.com) y mú
 
 Opcionalmente, integra un **Knowledge Graph en Neo4j** para detectar impacto cross-repo: si un PR toca un contrato, esquema o ruta que otro servicio consume, el revisor lo advierte automáticamente en el análisis.
 
-## Proveedores soportados
+## Arquitectura
 
-- **HuggingFace** — Modelos hospedados en HuggingFace Inference API (por defecto)
-- **OpenAI** — API oficial de OpenAI
-- **Ollama** — Modelos locales con Ollama
+```
+┌─────────────────────┐   HTTP    ┌─────────────────────┐
+│  Frontend           │──────────▶│  Backend            │
+│  Streamlit :8501    │           │  FastAPI :8000       │
+│  (UI + form)        │◀──────────│  (lógica + agentes)  │
+└─────────────────────┘           └──────────┬──────────┘
+                                             │ Bolt
+                                   ┌─────────▼──────────┐
+                                   │  Neo4j Aura         │
+                                   │  (Knowledge Graph)  │
+                                   └─────────────────────┘
+```
+
+- **Frontend** (`frontend/`): UI Streamlit pura. Envía credenciales y datos del PR al backend via HTTP. Sin lógica de dominio.
+- **Backend** (`backend/`): API REST FastAPI. Orquesta el agente LLM, consulta el Knowledge Graph y postea comentarios en GitHub.
+- **src/**: Capa de dominio compartida (reviewer, knowledge graph). Importada directamente por el backend.
+
+## Proveedores LLM soportados
+
+| Proveedor | Descripción | Coste |
+|-----------|-------------|-------|
+| **Cerebras** (via HuggingFace router) | Muy rápido, structured outputs | Gratis (1M tokens/día) |
+| **HuggingFace** | Modelos hosted en HF Inference API | Gratis |
+| **OpenAI** | API oficial de OpenAI | De pago |
+| **Ollama** | Modelos locales | Gratis (local) |
 
 ## Requisitos
 
 - Python >= 3.14
-- [uv](https://docs.astral.sh/uv/) (gestor de paquetes recomendado)
-- Docker + Docker Compose (opcional, para el Knowledge Graph con Neo4j)
+- [uv](https://docs.astral.sh/uv/) (gestor de paquetes)
+- Docker + Docker Compose (para desarrollo local completo)
 
-## Instalación
+## Inicio rápido (Docker Compose)
 
 ```bash
-# Clonar el repositorio
+# 1. Clonar el repositorio
 git clone <url-del-repositorio>
 cd <carpeta-del-repositorio>
 
-# Copiar el fichero de configuración y editar con tus API keys
-cp dummy.env .env
+# 2. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales
 
-# Instalar dependencias con uv
-uv sync
+# 3. Levantar todos los servicios (backend + frontend + neo4j)
+docker compose up --build
+
+# Frontend disponible en: http://localhost:8501
+# Backend API en:         http://localhost:8000
+# Neo4j Browser en:       http://localhost:7474
 ```
 
 ## Configuración
 
-Edita el archivo `.env` con tus credenciales. Las variables disponibles son:
+Copia `.env.example` a `.env` y completa las variables:
 
 ```env
-# HuggingFace
-HUGGING_FACE_API_KEY=tu_api_key
-HUGGING_FACE_API_URL=https://router.huggingface.co/v1
-
-# OpenAI (opcional)
-OPENAI_API_KEY=tu_api_key
-
-# Ollama (opcional)
-OLLAMA_API_URL=http://localhost:11434/v1
-
-# GitHub (necesario para leer PRs y publicar comentarios)
-GITHUB_ACCESS_TOKEN=tu_github_token
-
-# Proveedor y modelo por defecto
-DEFAULT_MODEL=moonshotai/Kimi-K2-Instruct
-DEFAULT_PROVIDER=huggingface
-
-# Neo4j Knowledge Graph (opcional)
-NEO4J_URI=bolt://localhost:7687
+# ── Backend ──────────────────────────────────────────────
+# Neo4j (usa Neo4j Aura en producción)
+NEO4J_URI=neo4j+s://xxxx.databases.neo4j.io
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=changeme
+NEO4J_PASSWORD=tu_password
+
+# Knowledge Graph (desactivado por defecto)
 ENABLE_GRAPH_ENRICHMENT=false
-GRAPH_QUERY_TIMEOUT=5
-MAX_IMPACT_WARNINGS=10
+
+# Webhook GitHub (credenciales de sistema)
+GITHUB_ACCESS_TOKEN=ghp_tu_token
+GITHUB_WEBHOOK_SECRET=tu_secreto_webhook   # genera con: openssl rand -hex 32
+DEFAULT_PROVIDER=cerebras
+HUGGING_FACE_API_KEY=hf_tu_key
+
+# CORS — URL del frontend
+CORS_ORIGINS=http://localhost:8501
+
+# ── Frontend ─────────────────────────────────────────────
+BACKEND_URL=http://backend:8000   # en docker-compose usa el nombre del servicio
 ```
 
 El token de GitHub necesita permisos `repo` (repositorios privados) o `public_repo` (públicos).
 
-## Uso
+## Uso via interfaz web
 
-### Revisar un PR desde la CLI
+Abre `http://localhost:8501` en el navegador:
+
+1. **Sidebar**: selecciona el proveedor LLM e introduce tu API key
+2. **Formulario**: introduce el owner, repo y número de PR de GitHub
+3. **Revisar**: el backend analiza el diff, consulta el grafo y devuelve el resultado
+4. Los bugs detectados se postean automáticamente como comentarios inline en el PR
+
+## Uso via CLI
 
 ```bash
-uv run python main.py review <owner/repo> <pr_number>
+# Revisar un PR desde la línea de comandos
+uv run python -m backend.main review octocat/Hello-World 42
 
 # Con salida detallada (debug)
-uv run python main.py review <owner/repo> <pr_number> --debug
-```
+uv run python -m backend.main review octocat/Hello-World 42 --debug
 
-Ejemplo:
-
-```bash
-uv run python main.py review octocat/Hello-World 42
-```
-
-### Iniciar el servidor webhook (modo producción)
-
-```bash
-uv run python main.py serve
-```
-
-El servidor arranca en `http://0.0.0.0:8000` y expone el endpoint `POST /webhook/github`. Configura un webhook en tu repositorio de GitHub apuntando a esa URL con el evento `pull_request`.
-
-### Comandos del Knowledge Graph
-
-```bash
-# Inicializar constraints e índices en Neo4j
-uv run python main.py graph init
-
-# Importar topología de servicios desde un fichero YAML
-uv run python main.py graph import examples/topology.yaml
-
-# Buscar una entidad en el grafo por nombre
-uv run python main.py graph query OrderCreatedEvent
-
-# Buscar consumidores de una ruta de fichero concreta
-uv run python main.py graph query src/models/order.py --by-path
-
-# Listar todos los consumidores de una entidad
-uv run python main.py graph query OrderCreatedEvent --consumers
+# Iniciar el servidor API (backend solo)
+uv run python -m backend.main serve
 ```
 
 ## Knowledge Graph (detección de impacto cross-repo)
@@ -135,23 +136,25 @@ Cuando varios servicios comparten contratos (eventos, esquemas, APIs), un cambio
 | `DEFINES` | Un contrato define un schema |
 | `HAS_FIELD` | Un schema tiene un campo |
 
-### Flujo de revisión enriquecida
+### Poblar el grafo
 
+```bash
+# 1. Inicializar constraints e índices en Neo4j
+NEO4J_URI=... NEO4J_USER=neo4j NEO4J_PASSWORD=... \
+uv run python -m backend.main graph init
+
+# 2. Importar topología de servicios desde YAML
+NEO4J_URI=... NEO4J_USER=neo4j NEO4J_PASSWORD=... \
+uv run python -m backend.main graph import examples/topology.yaml
+
+# 3. Verificar entidades en el grafo
+uv run python -m backend.main graph query OrderCreatedEvent
+uv run python -m backend.main graph query src/models/order.py --by-path
 ```
-PR diff
-  └─▶ extract changed paths
-        └─▶ query graph → downstream consumers
-              └─▶ build impact section (ImpactWarning list)
-                    └─▶ inject into LLM prompt
-                          └─▶ review with cross-repo awareness
-                                └─▶ ReviewOutput (bugs + impact_warnings)
-```
-
-### Feature toggle y degradación elegante
-
-El enrichment está **desactivado por defecto** (`ENABLE_GRAPH_ENRICHMENT=false`). Cuando está desactivado, o si Neo4j no está disponible, la revisión continúa exactamente igual que sin el módulo. No hay errores bloqueantes.
 
 ### Formato del fichero de topología (YAML)
+
+Consulta `examples/topology.yaml` para un ejemplo completo. Estructura básica:
 
 ```yaml
 repositories:
@@ -161,91 +164,86 @@ repositories:
       - name: OrderService
         produces:
           - name: OrderCreatedEvent
-            path: src/events/order_created.py
-            schema:
-              fields:
-                - name: order_id
-                  type: string
-                - name: amount
-                  type: float
-        consumes: []
-
-  - name: payment-service
-    url: https://github.com/org/payment-service
-    services:
-      - name: PaymentService
-        produces: []
-        consumes:
-          - name: OrderCreatedEvent
-            from_service: OrderService
+            file_path: src/events/order_created.py
+            schemas:
+              - name: OrderSchema
+                file_path: src/schemas/order.py
+                fields:
+                  - name: order_id
+                    type: string
 ```
 
-Consulta `examples/topology.yaml` para un ejemplo realista con tres servicios.
+## Despliegue en Render
 
-## Quick Start con Knowledge Graph
+El repositorio incluye `render.yaml` para despliegue con un solo click:
 
-```bash
-# 1. Levantar Neo4j con Docker
-docker compose up -d
+1. **Render → New → Blueprint** → conectar este repositorio
+2. Render crea automáticamente dos servicios Docker (`pr-reviewer-api` y `pr-reviewer-web`)
+3. Completar las env vars secretas en el dashboard de Render
+4. Actualizar `CORS_ORIGINS` (backend) y `BACKEND_URL` (frontend) con las URLs públicas asignadas
+5. *(Opcional)* Configurar webhook en GitHub → `https://<backend>.onrender.com/api/v1/webhook/github`
 
-# 2. Habilitar el enrichment en .env
-echo "ENABLE_GRAPH_ENRICHMENT=true" >> .env
-
-# 3. Inicializar el schema en Neo4j
-uv run python main.py graph init
-
-# 4. Importar la topología de ejemplo
-uv run python main.py graph import examples/topology.yaml
-
-# 5. Revisar un PR con detección de impacto cross-repo activa
-uv run python main.py review octocat/Hello-World 42
-```
+> El endpoint del webhook valida la firma HMAC-SHA256. Si `GITHUB_WEBHOOK_SECRET` no está configurado, devuelve `501 Not Implemented` (seguro por defecto).
 
 ## Estructura del proyecto
 
 ```text
 .
-├── main.py                      # CLI (review / serve / graph) + FastAPI webhook
-├── docker-compose.yml           # Neo4j 5 Community Edition
-├── examples/
-│   └── topology.yaml            # Ejemplo de topología de servicios
-├── src/
+├── backend/                     # Servicio backend (FastAPI)
+│   ├── main.py                  # Entrypoint: FastAPI app + CLI + webhook
+│   ├── api/v1/routes.py         # Endpoints REST: /review, /providers, /health
 │   ├── core/
-│   │   ├── config.py            # Config: variables de entorno + get_model_config()
-│   │   └── exceptions.py        # Excepciones personalizadas (incl. GraphError)
-│   ├── knowledge/
-│   │   ├── __init__.py          # API pública del módulo
-│   │   ├── client.py            # Driver Neo4j: get_driver(), close_driver(), check_health()
-│   │   ├── schema.py            # Constraints, índices, constantes, init_schema()
-│   │   ├── models.py            # TopologyConfig, ImpactWarning, ImpactResult (Pydantic)
-│   │   ├── population.py        # load_topology() + populate_graph() con MERGE atómico
-│   │   └── queries.py           # find_consumers_of_paths(), find_consumers(), search_entities()
+│   │   ├── config.py            # BackendConfig (env vars + CORS_ORIGINS)
+│   │   └── providers.py         # PROVIDERS dict + build_provider_config()
+│   ├── models/schemas.py        # DTOs Pydantic: ReviewRequest, ReviewResponse…
+│   ├── services/reviewer.py     # Orquestador: adapter entre API y domain layer
+│   ├── Dockerfile               # Imagen Docker del backend
+│   └── pyproject.toml           # Dependencias del backend
+├── frontend/                    # Servicio frontend (Streamlit)
+│   ├── streamlit_app.py         # UI: form + httpx calls al backend
+│   ├── Dockerfile               # Imagen Docker del frontend
+│   └── pyproject.toml           # Dependencias del frontend (streamlit + httpx)
+├── src/                         # Capa de dominio (importada por backend)
+│   ├── core/
+│   │   ├── config.py            # Config: variables de entorno
+│   │   └── exceptions.py        # Excepciones personalizadas (GraphError…)
+│   ├── knowledge/               # Módulo Knowledge Graph
+│   │   ├── client.py            # Driver Neo4j: get_driver(), check_health()
+│   │   ├── schema.py            # Constraints, índices, init_schema()
+│   │   ├── models.py            # TopologyConfig, ImpactWarning, ImpactResult
+│   │   ├── population.py        # load_topology() + populate_graph()
+│   │   └── queries.py           # find_consumers_of_paths(), search_entities()
 │   └── reviewer/
-│       ├── agent.py             # Agno Agent + review_pr() + enrichment step
-│       ├── models.py            # BugReport, ReviewOutput (incl. impact_warnings)
+│       ├── agent.py             # Agno Agent + review_pr_with_config()
+│       ├── models.py            # BugReport, ReviewOutput
 │       ├── prompts.py           # REVIEWER_INSTRUCTIONS + _build_impact_section()
 │       └── tools.py             # fetch_pr_data() + post_review_comments()
-├── tests/                       # Tests unitarios (94 tests)
-├── pyproject.toml               # Configuración del proyecto
-├── dummy.env                    # Plantilla de variables de entorno
-└── .env                         # Variables de entorno (no incluido en git)
+├── tests/                       # 121 tests unitarios
+├── examples/
+│   └── topology.yaml            # Ejemplo de topología de servicios
+├── docker-compose.yml           # Orquestación local: backend + frontend + neo4j
+├── render.yaml                  # Render IaC: deploy automático en Render
+├── .env.example                 # Plantilla de variables de entorno
+└── pyproject.toml               # Metadata del proyecto raíz
 ```
 
-## Dependencias principales
+## API REST (backend)
 
-- `agno` — Framework de agentes LLM (abstracción multi-proveedor + output estructurado)
-- `openai` — Cliente para APIs compatibles con OpenAI (usado internamente por Agno)
-- `pygithub` — Lectura de PRs y diffs desde la API de GitHub
-- `httpx` — Publicación de comentarios de revisión inline vía GitHub REST API
-- `fastapi[standard]` — Servidor webhook para integración en producción
-- `python-dotenv` — Carga de variables de entorno desde `.env`
-- `neo4j` — Driver oficial de Neo4j (Knowledge Graph)
-- `pyyaml` — Parsing de ficheros de topología YAML
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `POST` | `/api/v1/review` | Ejecuta revisión de PR, devuelve `ReviewResponse` |
+| `GET` | `/api/v1/providers` | Lista proveedores LLM disponibles |
+| `GET` | `/health` | Health check (siempre HTTP 200) |
+| `POST` | `/api/v1/webhook/github` | Webhook GitHub (requiere `GITHUB_WEBHOOK_SECRET`) |
 
 ## Tests
 
 ```bash
-uv run pytest
+# Tests unitarios (sin dependencias externas)
+uv run pytest tests/ -m "not integration"
+
+# Todos los tests (requiere Neo4j y credenciales reales)
+uv run pytest tests/
 ```
 
-Los 94 tests cubren los módulos `core`, `reviewer` y `knowledge` (client, schema, models, population, queries).
+Los 121 tests cubren los módulos `core`, `reviewer` y `knowledge`.
