@@ -10,7 +10,9 @@ class Config:
 
     # HuggingFace
     HUGGING_FACE_API_KEY: str = os.getenv("HUGGING_FACE_API_KEY", "")
-    HUGGING_FACE_API_URL: str = os.getenv("HUGGING_FACE_API_URL", "https://router.huggingface.co/v1")
+    HUGGING_FACE_API_URL: str = os.getenv(
+        "HUGGING_FACE_API_URL", "https://router.huggingface.co/v1"
+    )
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -31,9 +33,17 @@ class Config:
     NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "")
 
     # Knowledge Graph
-    ENABLE_GRAPH_ENRICHMENT: bool = os.getenv("ENABLE_GRAPH_ENRICHMENT", "false").lower() == "true"
+    ENABLE_GRAPH_ENRICHMENT: bool = (
+        os.getenv("ENABLE_GRAPH_ENRICHMENT", "false").lower() == "true"
+    )
     GRAPH_QUERY_TIMEOUT: int = int(os.getenv("GRAPH_QUERY_TIMEOUT", "5"))
     MAX_IMPACT_WARNINGS: int = int(os.getenv("MAX_IMPACT_WARNINGS", "10"))
+
+    # Prompt injection defense
+    MAX_DIFF_CHARS: int = int(os.getenv("MAX_DIFF_CHARS", "100000"))
+    TRUSTED_AUTHOR_ASSOCIATIONS: str = os.getenv(
+        "TRUSTED_AUTHOR_ASSOCIATIONS", "OWNER,MEMBER,COLLABORATOR"
+    )
 
     @classmethod
     def get_model_config(cls) -> tuple[str, str, str]:

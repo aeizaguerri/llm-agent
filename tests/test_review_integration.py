@@ -84,6 +84,7 @@ class TestReviewPrGraphEnrichmentDisabled:
             # Spy on knowledge module imports to verify they are never called
             with patch("src.knowledge.client.check_health") as mock_check_health:
                 from src.reviewer.agent import review_pr
+
                 result = review_pr("owner", "repo", 1)
 
                 # check_health must NOT have been called
@@ -107,6 +108,7 @@ class TestReviewPrGraphEnrichmentDisabled:
             mock_build_agent.return_value.run = MagicMock(return_value=mock_run)
 
             from src.reviewer.agent import review_pr
+
             result = review_pr("owner", "repo", 1)
 
         assert result.impact_warnings == []
@@ -137,14 +139,13 @@ class TestReviewPrNeo4jDown:
             # Patch check_health inside the reviewer.agent module's import scope
             with patch("src.knowledge.client.check_health", return_value=False):
                 from src.reviewer.agent import review_pr
+
                 result = review_pr("owner", "repo", 1)
 
         assert isinstance(result, ReviewOutput)
         assert result.impact_warnings == []
 
-    def test_impact_warnings_empty_when_neo4j_down(
-        self, graph_enrichment_enabled
-    ):
+    def test_impact_warnings_empty_when_neo4j_down(self, graph_enrichment_enabled):
         """result.impact_warnings must be [] when Neo4j health check returns False."""
         mock_review_output = _make_review_output()
 
@@ -160,6 +161,7 @@ class TestReviewPrNeo4jDown:
 
             with patch("src.knowledge.client.check_health", return_value=False):
                 from src.reviewer.agent import review_pr
+
                 result = review_pr("owner", "repo", 1)
 
         assert result.impact_warnings == []
@@ -171,9 +173,7 @@ class TestReviewPrNeo4jDown:
 
 
 class TestReviewPrWithGraphWarnings:
-    def test_impact_warnings_attached_to_result(
-        self, graph_enrichment_enabled
-    ):
+    def test_impact_warnings_attached_to_result(self, graph_enrichment_enabled):
         """When graph returns warnings, they must be attached to ReviewOutput."""
         mock_review_output = _make_review_output()
         warning = _make_impact_warning()
@@ -198,14 +198,13 @@ class TestReviewPrWithGraphWarnings:
                 ),
             ):
                 from src.reviewer.agent import review_pr
+
                 result = review_pr("owner", "repo", 1)
 
         assert len(result.impact_warnings) == 1
         assert result.impact_warnings[0].affected_service == "payment-worker"
 
-    def test_impact_section_injected_into_prompt(
-        self, graph_enrichment_enabled
-    ):
+    def test_impact_section_injected_into_prompt(self, graph_enrichment_enabled):
         """When warnings are present, the impact section must be prepended to the prompt."""
         mock_review_output = _make_review_output()
         warning = _make_impact_warning()
@@ -236,6 +235,7 @@ class TestReviewPrWithGraphWarnings:
                 ),
             ):
                 from src.reviewer.agent import review_pr
+
                 review_pr("owner", "repo", 1)
 
         assert len(captured_prompts) == 1
@@ -243,7 +243,7 @@ class TestReviewPrWithGraphWarnings:
         assert "## Cross-Repository Impact Analysis" in prompt
         # Impact section must appear BEFORE the diff content
         impact_pos = prompt.index("## Cross-Repository Impact Analysis")
-        diff_pos = prompt.index("PR title:")
+        diff_pos = prompt.index("<pr_title>")
         assert impact_pos < diff_pos
 
     def test_bugs_and_summary_unaffected_by_impact_warnings(
@@ -273,6 +273,7 @@ class TestReviewPrWithGraphWarnings:
                 ),
             ):
                 from src.reviewer.agent import review_pr
+
                 result = review_pr("owner", "repo", 1)
 
         assert result.summary == "PR looks okay."
@@ -308,6 +309,7 @@ class TestReviewPrGraphError:
                 side_effect=RuntimeError("Unexpected internal error"),
             ):
                 from src.reviewer.agent import review_pr
+
                 # Must NOT raise
                 result = review_pr("owner", "repo", 1)
 

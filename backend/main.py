@@ -12,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.v1.routes import router
 from backend.core.config import BackendConfig
+from src.core.config import Config
 from src.reviewer.agent import review_pr, review_pr_debug
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Webhook signature validation
@@ -87,6 +90,24 @@ async def github_webhook(
 
     if not pr_number or "/" not in repo_full:
         raise HTTPException(status_code=400, detail="Invalid webhook payload")
+
+    # L1: Author association gating — skip untrusted authors
+    author_association = (pr.get("author_association") or "NONE").upper()
+    _trusted_raw = {
+        a.strip().upper() for a in Config.TRUSTED_AUTHOR_ASSOCIATIONS.split(",")
+    }
+    trusted = {a for a in _trusted_raw if a}
+    if not trusted:
+        logger.warning(
+            "TRUSTED_AUTHOR_ASSOCIATIONS resolved to empty set — "
+            "falling back to default: OWNER,MEMBER,COLLABORATOR"
+        )
+        trusted = {"OWNER", "MEMBER", "COLLABORATOR"}
+    if author_association not in trusted:
+        return {
+            "status": "skipped",
+            "reason": f"untrusted author association: {author_association}",
+        }
 
     owner, repo = repo_full.split("/", 1)
 

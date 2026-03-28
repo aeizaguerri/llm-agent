@@ -1,8 +1,13 @@
 import json
+import logging
 import os
 
 import httpx
 from github import Github
+
+from src.core.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_pr_data(
@@ -34,6 +39,20 @@ def fetch_pr_data(
             diff_parts.append(f"### {f.filename}\n{f.patch}")
 
     diff_text = "\n\n".join(diff_parts)
+
+    # L5: Truncate oversized diffs
+    max_chars = Config.MAX_DIFF_CHARS
+    if len(diff_text) > max_chars:
+        logger.warning(
+            "Diff for %s/%s#%d truncated: %d → %d chars",
+            owner,
+            repo,
+            pr_number,
+            len(diff_text),
+            max_chars,
+        )
+        diff_text = diff_text[:max_chars] + "\n\n[TRUNCATED — diff exceeded size limit]"
+
     return diff_text, head_sha, pr_title
 
 

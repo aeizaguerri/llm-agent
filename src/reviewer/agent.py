@@ -1,5 +1,7 @@
+import html
 import json
 import logging
+import re
 
 from agno.agent import Agent
 from agno.models.openai.like import OpenAILike
@@ -57,12 +59,27 @@ def _build_agent_with_config(
     )
 
 
+def _sanitize_title(title: str) -> str:
+    """Strip control characters and collapse whitespace from PR title."""
+    # Remove all control characters (C0 + C1) except space, plus Unicode BIDI/invisible chars
+    cleaned = re.sub(
+        r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]",
+        " ",
+        title,
+    )
+    # Collapse multiple spaces
+    return " ".join(cleaned.split())
+
+
 def _make_prompt(pr_title: str, diff_text: str) -> str:
+    clean_title = html.escape(_sanitize_title(pr_title))
+    safe_diff = html.escape(diff_text)
     return (
-        f"PR title: {pr_title}\n\n"
-        "Below is the unified diff for this pull request. "
-        "Analyse it for bugs and produce a ReviewOutput.\n\n"
-        f"{diff_text}"
+        "Below is the pull request to review. Analyse the diff for bugs and produce a ReviewOutput.\n\n"
+        f"<pr_title>{clean_title}</pr_title>\n\n"
+        "<diff_content>\n"
+        f"{safe_diff}\n"
+        "</diff_content>"
     )
 
 
