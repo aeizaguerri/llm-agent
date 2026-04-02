@@ -5,6 +5,7 @@ import hmac
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.v1.routes import router
 from backend.core.config import BackendConfig
 from src.core.config import Config
+from src.core.logging_config import configure_logging
 from src.reviewer.agent import review_pr, review_pr_debug
 
 logger = logging.getLogger(__name__)
@@ -51,7 +53,20 @@ async def _verify_github_signature(
 # FastAPI application
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="PR Code Reviewer API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan handler — configures logging on startup.
+
+    This ensures that direct ``uvicorn backend.main:app`` invocations (which
+    bypass ``main()``) still have logging configured before any request lands.
+    """
+    configure_logging()
+    logger.info("PR Reviewer backend started")
+    yield
+
+
+app = FastAPI(title="PR Code Reviewer API", lifespan=lifespan)
 
 # CORS middleware
 _cors_origins = [o.strip() for o in BackendConfig.CORS_ORIGINS.split(",") if o.strip()]
@@ -127,16 +142,13 @@ async def github_webhook(
 
 def _cli_review(repo_slug: str, pr_number: int, debug: bool = False) -> None:
     if "/" not in repo_slug:
-        print(f"Error: repo must be in 'owner/repo' format, got '{repo_slug}'")
+        logger.error("repo must be in 'owner/repo' format, got '%s'", repo_slug)
         sys.exit(1)
 
     owner, repo = repo_slug.split("/", 1)
 
     if debug:
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        )
+        configure_logging("DEBUG")
         print(f"\n[DEBUG] Reviewing PR #{pr_number} in {owner}/{repo}\n{'=' * 60}")
         review_pr_debug(owner=owner, repo=repo, pr_number=pr_number)
         return
@@ -177,11 +189,11 @@ def _cli_graph(args: list[str]) -> None:
         try:
             driver = get_driver()
         except GraphError as exc:
-            print(f"Error: could not connect to Neo4j — {exc}")
+            logger.error("Could not connect to Neo4j — %s", exc)
             sys.exit(1)
 
         if not check_health():
-            print("Error: Neo4j is not reachable. Is it running?")
+            logger.error("Neo4j is not reachable. Is it running?")
             sys.exit(1)
 
         init_schema(driver)
@@ -201,22 +213,22 @@ def _cli_graph(args: list[str]) -> None:
         try:
             topology = load_topology(yaml_file)
         except FileNotFoundError as exc:
-            print(f"Error: {exc}")
+            logger.error("File not found: %s", exc)
             sys.exit(1)
         except Exception as exc:
-            print(f"Error: invalid topology file — {exc}")
+            logger.error("Invalid topology file — %s", exc)
             sys.exit(1)
 
         try:
             driver = get_driver()
         except GraphError as exc:
-            print(f"Error: could not connect to Neo4j — {exc}")
+            logger.error("Could not connect to Neo4j — %s", exc)
             sys.exit(1)
 
         try:
             stats = populate_graph(driver, topology)
         except Exception as exc:
-            print(f"Error: graph import failed — {exc}")
+            logger.error("Graph import failed — %s", exc)
             sys.exit(1)
 
         print(
@@ -246,7 +258,7 @@ def _cli_graph(args: list[str]) -> None:
         try:
             driver = get_driver()
         except GraphError as exc:
-            print(f"Error: could not connect to Neo4j — {exc}")
+            logger.error("Could not connect to Neo4j — %s", exc)
             sys.exit(1)
 
         try:
@@ -281,7 +293,7 @@ def _cli_graph(args: list[str]) -> None:
                 else:
                     print(f"Entity '{entity_name}' not found in the knowledge graph.")
         except Exception as exc:
-            print(f"Error: query failed — {exc}")
+            logger.error("Query failed — %s", exc)
             sys.exit(1)
 
     else:
@@ -290,6 +302,7 @@ def _cli_graph(args: list[str]) -> None:
 
 
 def main() -> None:
+    configure_logging()
     args = sys.argv[1:]
 
     if not args:
